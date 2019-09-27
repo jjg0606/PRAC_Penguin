@@ -1,0 +1,127 @@
+#include "SocketMain.h"
+#include "UserHandler.h"
+#include "cmGameRoomMgr.h"
+#include "PACKET.h"
+#include <iostream>
+#define BUFSIZE 512
+
+void ProcessSync(SOCKET& client_sock, int roomNum, int& vertexNum, int playerNum);
+void ProcessReceive(const char* buf, int roomNum, int playerNum);
+
+void SocketMain(SOCKET client_sock, SOCKADDR_IN client_addr,bool& isStart)
+{
+	int option = 1;
+	setsockopt(client_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&option, sizeof(option));
+	int addrlen;
+	char* buf = new char[BUFSIZE + 1];
+
+	addrlen = sizeof(client_addr);
+	getpeername(client_sock, (SOCKADDR*)&client_addr, &addrlen);
+
+	int roomNum = cmGameRoomMgr::instance.getRoomNum();
+	int playerNum = cmGameRoomMgr::instance.getPlayerNum();
+	int vertexNum = 0;
+	
+	Sleep(100);
+
+	while (isStart)
+	{
+		ProcessSync(client_sock, roomNum, vertexNum,playerNum);
+		int retval;
+		retval = recv(client_sock, buf, BUFSIZE, 0);
+		if (retval == SOCKET_ERROR)
+		{
+			if (WSAGetLastError() == WSAEWOULDBLOCK)
+			{
+				continue;
+			}
+			break;
+		}
+		else if (retval == 0)
+		{
+			break;
+		}
+		else
+		{
+			ProcessReceive(buf, roomNum, playerNum);			
+		}
+	}
+
+	delete buf;
+}
+
+void ProcessReceive(const char* buf,int roomNum,int playerNum)
+{
+	struct PACKET_HEADER pHeader;
+	memcpy(&pHeader, buf, sizeof(pHeader));
+	if (pHeader.type == SEND_POS)
+	{
+		struct PACKET_POINT psend;
+		memcpy(&psend, buf, sizeof(psend));
+		for (int i = 0; i < psend.num; i ++)
+		{
+			cmGameRoomMgr::instance.getVertexFrom(roomNum, playerNum, psend.xarr[i], psend.yarr[i]);		}
+	}
+	std::cout << "get vertex from " << playerNum << '\n';
+}
+
+void ProcessSync(SOCKET& client_sock,int roomNum,int& vertexNum, int playerNum)
+{	
+	while (true)
+	{
+		int posNum = 0;
+		int x, y = 0;
+		struct PACKET_POINT pospacket;
+		for (int i = 0; i < 20; i++)
+		{
+			if (cmGameRoomMgr::instance.Syncronize(x, y, roomNum, vertexNum))
+			{
+				pospacket.xarr[posNum] = x;
+				pospacket.yarr[posNum] = y;
+				posNum++;
+				vertexNum++;
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		if (posNum != 0)
+		{
+			pospacket.header.type = SEND_POS;
+			pospacket.header.size = sizeof(pospacket);
+			pospacket.num = posNum;
+			send(client_sock, (const char*)&pospacket, sizeof(pospacket), 0);
+			std::cout << "send to player " << playerNum << ",room num = "<< roomNum << ", vertex num = " << vertexNum << '\n';
+			Sleep(10);
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+
+////////////////////
+
+
+enum PACKET_TYPE
+{
+	SEND_POS,
+};
+
+#pragma pack(1)
+struct PACKET_HEADER
+{
+	int type;
+	int size;
+};
+
+struct PACKET_POINT
+{
+	PACKET_HEADER header;
+	int num;
+	int xarr[MAX_ARR_SIZE];
+	int yarr[MAX_ARR_SIZE];
+};
