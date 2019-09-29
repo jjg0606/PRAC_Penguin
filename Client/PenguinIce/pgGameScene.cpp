@@ -11,7 +11,6 @@ extern SOCKET g_sock;
 
 void pgGameScene::Update()
 {
-	ReadPacket(0);
 	if(GetAsyncKeyState(VK_RETURN)&0x8000)
 	{
 		if (state == pgGameState::IN_GAME || state == pgGameState::READY_FOR_GAME)
@@ -22,10 +21,40 @@ void pgGameScene::Update()
 	Invalidate();
 }
 
+void pgGameScene::DrawLogin(HDC hdc)
+{
+
+	FillRect(hdc, &getWinRect(), (HBRUSH)GetStockObject(WHITE_BRUSH));
+	// top Label
+	render.SetImg(imgMap[IMG_LABEL_LOGIN]);
+	render.SetPosition(50, 50);
+	render.Render(hdc);
+
+	for (int i = 0; i < 4; i++)
+	{
+		render.SetImg(imgMap[IMG_AVATAR1 + i]);
+		render.SetPosition(avatarBtn[i]->xpos, avatarBtn[i]->ypos);
+		render.Render(hdc);
+
+		if (selectedAvatar == i)
+		{
+			render.SetImg(imgMap[IMG_AURA_MY]);
+			render.Render(hdc);
+		}
+	}
+
+	render.SetImg(imgMap[IMG_BTN_CONFIRM]);
+	render.SetPosition(confirmBtn->xpos, confirmBtn->ypos);
+	render.Render(hdc);
+}
+
 void pgGameScene::DrawScreen(HDC hdc)
 {
 	switch (state)
 	{
+	case pgGameState::LOGIN:
+		DrawLogin(hdc);
+		break;
 	case pgGameState::IN_LOBBY:
 		DrawLobby(hdc);
 		break;
@@ -240,6 +269,9 @@ void pgGameScene::OnMouseClick(int x, int y, int BTN)
 
 	switch (state)
 	{
+	case pgGameState::LOGIN:
+		LoginMouseHandle(x, y);
+		break;
 	case pgGameState::IN_LOBBY:
 		LobbyMouseHandle(x, y);
 		break;
@@ -247,6 +279,23 @@ void pgGameScene::OnMouseClick(int x, int y, int BTN)
 	case pgGameState::IN_GAME:
 		InGameMouseHandle(x, y);
 		break;
+	}
+}
+
+void pgGameScene::LoginMouseHandle(int x, int y)
+{
+	for (int i = 0; i < 4; i++)
+	{
+		if (avatarBtn[i]->isIn(x, y))
+		{
+			selectedAvatar = i;
+			return;
+		}
+	}
+
+	if (confirmBtn->isIn(x, y) && GetWindowTextLength(hName) > 0)
+	{
+		SendLoginMsg();
 	}
 }
 
@@ -356,9 +405,7 @@ void pgGameScene::OnSocketEvent(UINT iMessage, WPARAM wParam, LPARAM lParam)
 		{
 			return;
 		}
-		bufIdx += retval;
-		ReadPacket(0);
-		//ReadPacket(retval);
+		ReadPacket(retval);
 	}
 	break;
 	}
@@ -459,6 +506,17 @@ void pgGameScene::SendReadySignal()
 	send(g_sock, (const char*)&header, sizeof(header), 0);
 }
 
+void pgGameScene::SendLoginMsg()
+{
+	PACKET_LOGIN_INFO loginfo;
+	loginfo.header.type = PACKET_TYPE_LOGIN_INFO;
+	loginfo.header.size = sizeof(loginfo);
+	memset(loginfo.name, 0, sizeof(loginfo.name));
+	GetWindowText(hName, loginfo.name, MAX_NAME_LENGTH);
+	loginfo.avatar = selectedAvatar;
+	send(g_sock, (const char*)&loginfo, sizeof(loginfo), 0);
+}
+
 void pgGameScene::LoadImgs()
 {
 	imgMap[IMG_ICE_BLUE] = new Image(L"resource/ice_blue.bmp");
@@ -482,6 +540,8 @@ void pgGameScene::LoadImgs()
 	imgMap[IMG_WIN] = new Image(L"resource/win.bmp");
 	imgMap[IMG_LOSE] = new Image(L"resource/lose.bmp");
 	imgMap[IMG_BTN_REFRESH] = new Image(L"resource/refresh_btn.bmp");
+	imgMap[IMG_BTN_CONFIRM] = new Image(L"resource/btn_confirm.bmp");
+	imgMap[IMG_LABEL_LOGIN] = new Image(L"resource/label_login.bmp");
 }
 
 void pgGameScene::Release()
@@ -492,153 +552,154 @@ void pgGameScene::Release()
 	}
 	delete readyBtn;
 	delete exitBtn;
+	delete refreshBtn;
+	for (int i = 0; i < 4; i++)
+	{
+		delete avatarBtn[i];
+	}
+	delete confirmBtn;
 }
 
 void pgGameScene::ReadPacket(int length)
 {
 	bufIdx += length;
-	if (bufIdx < sizeof(PACKET_HEADER))
+	   	  
+	while (true)	
 	{
-		return;
-	}
-
-	PACKET_HEADER header;
-	memcpy(&header, readBuf, sizeof(header));
-
-	if (bufIdx < header.size)
-	{
-		return;
-	}
-
-	if (header.size < sizeof(header)||BUFSIZE < length)
-	{
-		return;
-	}
-
-	switch (header.type)
-	{
-	case PACKET_TYPE_SYSTEM:
-	{
-		PACKET_SYSTEM syspac;
-		memcpy(&syspac, readBuf, sizeof(syspac));
-		if (syspac.system_msg == SYSTEM_MSG_SERVER_READY)
+		if (bufIdx < sizeof(PACKET_HEADER))
 		{
-			SendInitMsg();
+			break;
 		}
-	}
-	break;
 
-	case PACKET_TYPE_BLOCK_SETTING:
-	{
-		state = pgGameState::IN_GAME;
-		PACKET_BLOCK_SETTING blockset;
-		memcpy(&blockset, readBuf, header.size);
-		for (int r = 0; r < ROWS; r++)
+		PACKET_HEADER header;
+		memcpy(&header, readBuf, sizeof(header));
+
+		if (header.size < sizeof(header) || BUFSIZE < length)
 		{
-			for (int c = 0; c < COLS; c++)
+			break;
+		}
+
+		if (bufIdx < header.size)
+		{
+			break;
+		}
+		
+		switch (header.type)
+		{
+		case PACKET_TYPE_SYSTEM:
+		{
+			PACKET_SYSTEM syspac;
+			memcpy(&syspac, readBuf, sizeof(syspac));
+			if (syspac.system_msg == SYSTEM_MSG_SERVER_READY)
 			{
-				blockMap[r][c] = blockset.blockState[COLS * r + c];
+				SendInitMsg();
+				SetLoginScreen();
+				this->state = pgGameState::LOGIN;
 			}
 		}
-		turnIdx = blockset.trunIdx;
-		curCommand = blockset.command;
-	}
-	break;
+		break;
 
-	case PACKET_TYPE_LOBBY_INFO:
-	{
-		PACKET_LOBBY_INFO lobbypac;
-		memcpy(&lobbypac, readBuf, header.size);
-		for (int i = 0; i < lobbypac.roomNum; i++)
+		case PACKET_TYPE_BLOCK_SETTING:
 		{
-			lobbyVec[i].first = lobbypac.isPlaying[i];
-			lobbyVec[i].second = lobbypac.playerNum[i];
+			state = pgGameState::IN_GAME;
+			PACKET_BLOCK_SETTING blockset;
+			memcpy(&blockset, readBuf, header.size);
+			for (int r = 0; r < ROWS; r++)
+			{
+				for (int c = 0; c < COLS; c++)
+				{
+					blockMap[r][c] = blockset.blockState[COLS * r + c];
+				}
+			}
+			turnIdx = blockset.trunIdx;
+			curCommand = blockset.command;
 		}
-		state = pgGameState::IN_LOBBY;
-	}
-	break;
+		break;
 
-	//case PACKET_TYPE_LOBBY_IN:
-	//{
-	//	PACKET_LOBBY_IN lobpac;
-	//	memcpy(&lobpac, readBuf, header.size);
-	//	if (lobpac.index > 0)
-	//	{
-	//		state = pgGameState::READY_FOR_GAME;
-	//	}
-	//}
-	//break;
-
-	case PACKET_TYPE_LOBBY_PLAYERS:
-	{
-		PACKET_LOBBY_PLAYERS lppac;
-		memcpy(&lppac, readBuf, header.size);
-		inGamePlayerAvatar.resize(lppac.playerNum);
-		inGameReadyState.resize(lppac.playerNum);
-		for (int i = 0; i < lppac.playerNum; i++)
+		case PACKET_TYPE_LOBBY_INFO:
 		{
-			inGamePlayerAvatar[i] = lppac.avatar[i];
-			inGameReadyState[i] = lppac.isReady[i];
+			PACKET_LOBBY_INFO lobbypac;
+			memcpy(&lobbypac, readBuf, header.size);
+			for (int i = 0; i < lobbypac.roomNum; i++)
+			{
+				lobbyVec[i].first = lobbypac.isPlaying[i];
+				lobbyVec[i].second = lobbypac.playerNum[i];
+			}
+			state = pgGameState::IN_LOBBY;
 		}
-		this->myIndex = lppac.myNum;
-		isGameEnd = false;		
-		if (state == pgGameState::IN_LOBBY)
+		break;
+
+		case PACKET_TYPE_LOBBY_PLAYERS:
 		{
-			CreateChat();
-			state = pgGameState::READY_FOR_GAME;
+			PACKET_LOBBY_PLAYERS lppac;
+			memcpy(&lppac, readBuf, header.size);
+			inGamePlayerAvatar.resize(lppac.playerNum);
+			inGameReadyState.resize(lppac.playerNum);
+			for (int i = 0; i < lppac.playerNum; i++)
+			{
+				inGamePlayerAvatar[i] = lppac.avatar[i];
+				inGameReadyState[i] = lppac.isReady[i];
+			}
+			this->myIndex = lppac.myNum;
+			isGameEnd = false;
+			if (state == pgGameState::IN_LOBBY)
+			{
+				CreateChat();
+				state = pgGameState::READY_FOR_GAME;
+			}
 		}
-	}
-	break;
+		break;
 
-	case PACKET_TYPE_TURN_MSG:
-	{
-		PACKET_TURN_MSG tupac;
-		memcpy(&tupac, readBuf, header.size);
-		turnIdx = tupac.turnp;
-		curCommand = tupac.command;
-	}
-	break;
-
-	case PACKET_TYPE_BREAK_BLOCK:
-	{
-		PACKET_BREAK_BLOCK brpac;
-		memcpy(&brpac, readBuf, header.size);
-		for (int i = 0; i < brpac.nums; i++)
+		case PACKET_TYPE_TURN_MSG:
 		{
-			int row = brpac.idx[i] / COLS;
-			int col = brpac.idx[i] % COLS;
-			blockMap[row][col] = NULL_BLOCK;
+			PACKET_TURN_MSG tupac;
+			memcpy(&tupac, readBuf, header.size);
+			turnIdx = tupac.turnp;
+			curCommand = tupac.command;
 		}
-		if (blockMap[ROWS / 2][COLS / 2] == NULL_BLOCK)
+		break;
+
+		case PACKET_TYPE_BREAK_BLOCK:
 		{
-			// game ³¡
-			isGameEnd = true;
+			PACKET_BREAK_BLOCK brpac;
+			memcpy(&brpac, readBuf, header.size);
+			for (int i = 0; i < brpac.nums; i++)
+			{
+				int row = brpac.idx[i] / COLS;
+				int col = brpac.idx[i] % COLS;
+				blockMap[row][col] = NULL_BLOCK;
+			}
+			if (blockMap[ROWS / 2][COLS / 2] == NULL_BLOCK)
+			{
+				// game ³¡
+				isGameEnd = true;
+			}
 		}
-	}
-	break;
+		break;
 
-	case PACKET_TYPE_CHAT_MSG:
-	{
-		PACKET_CHAT_MSG chatpac;
-		memcpy(&chatpac, readBuf, header.size);
-		std::wstring cur;
-		cur.append(L"Player");
-		cur.append(to_wstring(chatpac.playerIdx + 1));
-		cur.append(L" : ");
-		for (int i = 0; i < chatpac.chatLength; i++)
+		case PACKET_TYPE_CHAT_MSG:
 		{
-			cur.push_back(chatpac.msg[i]);
+			PACKET_CHAT_MSG chatpac;
+			memcpy(&chatpac, readBuf, header.size);
+			std::wstring cur;
+			cur.append(L"Player");
+			cur.append(to_wstring(chatpac.playerIdx + 1));
+			cur.append(L" : ");
+			for (int i = 0; i < chatpac.chatLength; i++)
+			{
+				cur.push_back(chatpac.msg[i]);
+			}
+			chatMsgVec.emplace_back(cur);
 		}
-		chatMsgVec.emplace_back(cur);
-	}
-	break;
+		break;
 
-	default:
-		CutBuf(bufIdx);
-		return;
-	}
+		default:
+			CutBuf(bufIdx);
+			return;
+		}
 
-	CutBuf(header.size);
+		CutBuf(header.size);
+	}	
 }
 
 void pgGameScene::CutBuf(int length)
@@ -696,4 +757,27 @@ void pgGameScene::SendChatMsg()
 void pgGameScene::OnInput(WPARAM wParam)
 {
 
+}
+
+void pgGameScene::SetLoginScreen()
+{
+	int width = imgMap[IMG_AVATAR1]->bmWidth;
+	int height = imgMap[IMG_AVATAR1]->bmHeight;
+	int startx = 80;
+	int starty = 200;
+	int dx = 40;
+	for (int i = 0; i < 4; i++)
+	{
+		avatarBtn[i] = new pgBtn(startx + (width + dx) * i, starty, width, height);
+	}
+
+	confirmBtn = new pgBtn(150, 400, imgMap[IMG_BTN_CONFIRM]->bmWidth, imgMap[IMG_BTN_CONFIRM]->bmHeight);
+
+	hName = CreateWindow(TEXT("edit"), NULL, WS_CHILD | WS_BORDER | WS_VISIBLE | ES_AUTOHSCROLL, 150, 350, 300, 30, ProgramCore::instance.getHWND(), (HMENU)idName, ProgramCore::instance.getGinst(), NULL);
+	SendMessage(hName, EM_LIMITTEXT, (WPARAM)MAX_NAME_LENGTH, 0);
+}
+
+void pgGameScene::unSetLoginScreen()
+{
+	DestroyWindow(hName);
 }

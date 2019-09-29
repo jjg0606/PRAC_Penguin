@@ -1,5 +1,0 @@
-﻿  SettingLoader.cpp
-c:\users\administrator\desktop\jjg0606-repo\serverplatform\settingloader.cpp(29): warning C4244: '=': 'std::streamoff'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-c:\users\administrator\desktop\jjg0606-repo\serverplatform\settingloader.cpp(107): warning C4018: '<': signed 또는 unsigned가 일치하지 않습니다.
-c:\users\administrator\desktop\jjg0606-repo\serverplatform\settingloader.cpp(123): warning C4018: '<': signed 또는 unsigned가 일치하지 않습니다.
-  ServerPlatform.vcxproj -> C:\Users\Administrator\Desktop\jjg0606-repo\Debug\ServerPlatform.exe

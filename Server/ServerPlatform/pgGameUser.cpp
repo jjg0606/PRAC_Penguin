@@ -7,7 +7,7 @@ pgGameUser::pgGameUser(SOCKET& sock,bool& isStart)
 {
 	this->ID = pgGameMgr::instance.getID();
 	int getRand = rand();
-	this->avatarNum = (getRand%4);
+	//this->avatarNum = (getRand%4);
 	buf = new char[BUFSIZE + 1];
 	memset(buf, 0, sizeof(char)*(BUFSIZE + 1));
 }
@@ -38,11 +38,21 @@ void pgGameUser::ReceivePacket(int size)
 		memcpy(&syspac, buf, pHeader.size);
 		if (syspac.system_msg == SYSTEM_MSG_CLIENT_READY)
 		{
-			state = pgUserState::INIT;
+			state = pgUserState::BEFORE_LOGIN;
 		}
 	}
 	break;
 
+	case PACKET_TYPE_LOGIN_INFO:
+	{
+		PACKET_LOGIN_INFO loginpac;
+		memcpy(&loginpac, buf, pHeader.size);
+		avatarNum = loginpac.avatar;
+		name = loginpac.name;
+		state = pgUserState::INIT;
+	}
+	break;
+	
 	case PACKET_TYPE_LOBBY_IN:
 	{
 		isReady = false;

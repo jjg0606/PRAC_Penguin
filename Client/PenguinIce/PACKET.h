@@ -4,10 +4,12 @@
 #define COLS 5
 #define MAX_LOBBY 10
 #define MAX_CHAT_LENGTH 50
+#define MAX_NAME_LENGTH 12
 
 enum PACKET_TYPE
 {
 	PACKET_TYPE_SYSTEM,
+	PACKET_TYPE_LOGIN_INFO,
 	PACKET_TYPE_BLOCK_SETTING,
 	PACKET_TYPE_LOBBY_INFO,
 	PACKET_TYPE_LOBBY_IN,
@@ -47,6 +49,14 @@ typedef struct
 	int system_msg;
 }
 PACKET_SYSTEM;
+
+typedef struct
+{
+	PACKET_HEADER header;
+	int avatar;
+	wchar_t name[MAX_NAME_LENGTH];
+}
+PACKET_LOGIN_INFO;
 
 typedef struct
 {

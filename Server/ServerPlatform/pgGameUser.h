@@ -5,6 +5,7 @@
 #include <chrono>
 #include <vector>
 #include <list>
+#include <string>
 #define BUFSIZE 1024
 
 class pgGameUser
@@ -14,6 +15,7 @@ private:
 	int gameRoomNum = -1;
 	SOCKET& sock;
 	bool& isStart;
+	std::wstring name;
 	pgUserState state = pgUserState::BEFORE_READY_SIGNAL;
 	std::chrono::time_point<std::chrono::system_clock> lastSend;
 	void cutBuf(int size);

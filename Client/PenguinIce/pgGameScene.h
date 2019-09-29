@@ -28,6 +28,8 @@ class pgGameScene
 	void SendReadySignal();
 	void SendBreakBlockMsg(int row,int col);
 	void SendChatMsg();
+	void SendLoginMsg();
+	void unSetLoginScreen();
 	void LoadImgs();
 	ImageRenderer render;
 	pgGameState state = pgGameState::BEFORE_INIT;
@@ -39,22 +41,31 @@ class pgGameScene
 	std::vector<std::wstring> chatMsgVec;
 
 	HWND hChat;
+	HWND hName;
 	const int idChat = 100;
+	const int idName = 101;
+	int selectedAvatar = 0;
+
 	int turnIdx;
 	int curCommand;
 	int myIndex;
 	bool isGameEnd = false;
+	void SetLoginScreen();
+	void DrawLogin(HDC hdc);
 	void DrawInGame(HDC hdc);
 	void DrawLobbyAvatar(HDC hdc);
 	pgBtn* readyBtn;
 	pgBtn* exitBtn;
 	pgBtn* refreshBtn;
+	pgBtn* avatarBtn[4];
+	pgBtn* confirmBtn;
 	void DrawLobby(HDC hdc);
 	char readBuf[BUFSIZE];
 	int bufIdx = 0;
 	void CutBuf(int length);
 	void ClearReadBuf();
 	void CreateChat();
+	void LoginMouseHandle(int x, int y);
 	void LobbyMouseHandle(int x, int y);
 	void InGameMouseHandle(int x, int y);
 public:
