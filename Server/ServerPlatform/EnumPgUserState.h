@@ -8,4 +8,5 @@ enum class pgUserState
 	IN_LOBBY,
 	READY_FOR_GAME,
 	IN_GAME,
+	WATCHING,
 };

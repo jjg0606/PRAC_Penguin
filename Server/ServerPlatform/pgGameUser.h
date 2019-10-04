@@ -8,11 +8,12 @@
 #include <string>
 #define BUFSIZE 1024
 
+class pgGameRoom;
+
 class pgGameUser
 {
 private:
-	
-	int gameRoomNum = -1;
+	pgGameRoom* curRoom = nullptr;
 	SOCKET& sock;
 	bool& isStart;
 	std::wstring name;
@@ -24,7 +25,7 @@ private:
 	void SendReadySignal();
 	void SendLobbyInfo();
 	void RdyStateChange();
-	//void SendLobbyResult(int index);
+
 	int bufIdx=0;
 	char* buf;
 public:
@@ -43,4 +44,7 @@ public:
 	void SendBreakInfo(int breakNum, int* breakArr);
 	void SendTurnInfo(int turnp, int command);
 	void SendChatMsgTo(int idx, int length, wchar_t* buf);
+	void SendLobbyChatMsgTo(const std::wstring& id, int msgLength, wchar_t* buf);
+	void SendWatchInfo(std::vector<std::vector<int>>& map, int turnIdx, int command,int playerNum, pgGameUser* list[4]);
+	void SendWatchingEnd();
 };

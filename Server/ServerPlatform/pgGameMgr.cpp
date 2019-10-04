@@ -14,51 +14,51 @@ void pgGameMgr::getRoomInfo(int roomNum, bool& isPlaying, int& cntPlayer)
 	gameRoomArr[roomNum].getRoomInfo(isPlaying, cntPlayer);
 }
 
-bool pgGameMgr::getInRoom(int roomNum, pgGameUser* user)
+pgGameRoom* pgGameMgr::getInRoom(int roomNum, pgGameUser* user)
 {
 	if (roomNum < 0 || roomNum >= MAX_LOBBY)
 	{
 		return false;
 	}
 
-	return gameRoomArr[roomNum].JoinPlayer(user);
-}
-
-void pgGameMgr::userOutRoom(int roomNum, int ID)
-{
-	if (roomNum <0 || roomNum >= MAX_LOBBY)
+	if (gameRoomArr[roomNum].JoinPlayer(user))
 	{
-		return;
+		return (gameRoomArr + roomNum);
 	}
-
-	gameRoomArr[roomNum].DisconnectPlayer(ID);
+	else
+	{
+		return nullptr;
+	}
 }
 
-void pgGameMgr::RdyStateChanged(int roomNum)
+pgGameRoom* pgGameMgr::getInRoomAsWatcher(int roomNum, pgGameUser* user)
 {
 	if (roomNum < 0 || roomNum >= MAX_LOBBY)
 	{
-		return;
+		return false;
 	}
 
-	gameRoomArr[roomNum].chkStartCondition();
+	if (gameRoomArr[roomNum].JoinWatcher(user))
+	{
+		return (gameRoomArr + roomNum);
+	}
+	else
+	{
+		return nullptr;
+	}
 }
 
-void pgGameMgr::breakBlock(int roomNum, int userID, int row, int col)
+void pgGameMgr::GetInLobby(pgGameUser* user)
 {
-	if (roomNum < 0 || roomNum >= MAX_LOBBY)
-	{
-		return;
-	}
-
-	gameRoomArr[roomNum].getPlayerInput(userID, row, col);
+	lbyroom.IntoLobby(user);
 }
 
-void pgGameMgr::BroadCastChat(int roomNum, int useidx, int length, wchar_t* buf)
+void pgGameMgr::GetOutLobby(pgGameUser* user)
 {
-	if (roomNum < 0 || roomNum >= MAX_LOBBY)
-	{
-		return;
-	}
-	gameRoomArr[roomNum].broadCastChat(useidx, length, buf);
+	lbyroom.OutLobby(user);
+}
+
+void pgGameMgr::BroadCastToLobby(const std::wstring& name, int msgLength, wchar_t* buf)
+{
+	lbyroom.BroadCastChatMsg(name, msgLength, buf);
 }

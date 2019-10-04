@@ -1,4 +1,5 @@
 #include "pgGameRoom.h"
+#include "pgGameUser.h"
 #include <shared_mutex>
 
 bool pgGameRoom::JoinPlayer(pgGameUser* user)
@@ -16,8 +17,29 @@ bool pgGameRoom::JoinPlayer(pgGameUser* user)
 	{
 		return false;
 	}
+}
 
-	
+bool pgGameRoom::JoinWatcher(pgGameUser* user)
+{
+	if (gameState != pgGameState::IN_GAME)
+	{
+		return false;
+	}
+
+	std::unique_lock<std::shared_mutex> watchLock(watcherMutex);
+	watcherList.emplace(user);
+	watchLock.unlock();
+	std::shared_lock<std::shared_mutex> mapLock(mapMutex);
+	std::shared_lock<std::shared_mutex> listLock(listMutex);
+
+	pgGameUser* uList[4];
+	int index = 0;
+	for (auto iter = userList.begin(); iter != userList.end(); iter++)
+	{
+		uList[index++] = *iter;
+	}
+	user->SendWatchInfo(blockMap, curTurnIdx, curCommand, userList.size(), uList);
+	return true;
 }
 
 void pgGameRoom::DisconnectPlayer(int id)
@@ -38,13 +60,21 @@ void pgGameRoom::DisconnectPlayer(int id)
 		}
 		iter++;
 	}
+	listLock.unlock();
+
 	if (gameState == pgGameState::IN_GAME)
 	{
 		gameState = pgGameState::WAITING_PLAYER_JOIN;
 	}
 	
-	listLock.unlock();
+	
 	SyncLobbyPlayerInfo();
+}
+
+void pgGameRoom::DisconnectWatcher(pgGameUser* user)
+{
+	std::unique_lock<std::shared_mutex> watchLock(watcherMutex);
+	watcherList.erase(user);
 }
 
 void pgGameRoom::setBlockMap()
@@ -166,12 +196,19 @@ void pgGameRoom::SyncLobbyPlayerInfo()
 		uList[index++] = *iter;
 	}
 
-	listLock.unlock();
+	
 
 	for (auto iter = userList.begin(); iter != userList.end(); iter++)
 	{
 		(*iter)->SendLobbyPlayers(playerNum, uList);
 	}
+	listLock.unlock();
+	std::unique_lock<std::shared_mutex> watchLock(watcherMutex);
+	for (auto iter = watcherList.begin(); iter != watcherList.end(); iter++)
+	{
+		(*iter)->SendWatchingEnd();
+	}
+	watcherList.clear();
 }
 
 void pgGameRoom::chkStartCondition()
@@ -187,7 +224,6 @@ void pgGameRoom::chkStartCondition()
 			break;
 		}
 	}
-	
 
 	listLock.unlock();
 
@@ -286,7 +322,12 @@ void pgGameRoom::BreakBlock(int row, int col)
 		(*iter)->SendBreakInfo(breakNum, breakArr);
 	}
 	listLock.unlock();
-
+	std::shared_lock<std::shared_mutex> watchLock(watcherMutex);
+	for (auto iter = watcherList.begin(); iter != watcherList.end(); iter++)
+	{
+		(*iter)->SendBreakInfo(breakNum, breakArr);
+	}
+	watchLock.unlock();
 	if (isGameWin)
 	{
 		ProcessGameEnd();
@@ -353,12 +394,18 @@ void pgGameRoom::ProcessTurnEnd()
 	{
 		(*iter)->SendTurnInfo(curTurnIdx, curCommand);
 	}
+	listLock.unlock();
+	std::shared_lock<std::shared_mutex> watchLock(watcherMutex);
+	for (auto iter = watcherList.begin(); iter != watcherList.end(); iter++)
+	{
+		(*iter)->SendTurnInfo(curTurnIdx, curCommand);
+	}
 }
 
 void pgGameRoom::ProcessGameEnd()
 {
-	Sleep(6000);
 	gameState = pgGameState::WAITING_PLAYER_JOIN;
+	Sleep(6000);
 	std::unique_lock<std::shared_mutex> ulList(listMutex);
 	for (auto iter = userList.begin(); iter != userList.end(); iter++)
 	{
@@ -366,6 +413,13 @@ void pgGameRoom::ProcessGameEnd()
 	}
 	ulList.unlock();
 	SyncLobbyPlayerInfo();
+
+	std::unique_lock<std::shared_mutex> watchLock(watcherMutex);
+	for (auto iter = watcherList.begin(); iter != watcherList.end(); iter++)
+	{
+		(*iter)->SendWatchingEnd();
+	}
+	watcherList.clear();
 }
 
 void pgGameRoom::broadCastChat(int userid, int length, wchar_t* buf)
@@ -381,6 +435,13 @@ void pgGameRoom::broadCastChat(int userid, int length, wchar_t* buf)
 		useridx++;
 	}
 	for (auto iter = userList.begin(); iter != userList.end(); iter++)
+	{
+		(*iter)->SendChatMsgTo(useridx, length, buf);
+	}
+
+	listLock.unlock();
+	std::shared_lock<std::shared_mutex> watchLock(watcherMutex);
+	for (auto iter = watcherList.begin(); iter != watcherList.end(); iter++)
 	{
 		(*iter)->SendChatMsgTo(useridx, length, buf);
 	}

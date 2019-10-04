@@ -3,8 +3,8 @@
 #include <list>
 #include <vector>
 #include <mutex>
+#include <set>
 #include <shared_mutex>
-#include "pgGameUser.h"
 
 enum BlockType
 {
@@ -20,16 +20,21 @@ enum class pgGameState
 	IN_GAME,
 };
 
+class pgGameUser;
+
 class pgGameRoom
 {
 private:
 	//std::list<int> playerList;
 	std::list<pgGameUser*> userList;
+	std::set<pgGameUser*> watcherList;
+
 	pgGameState gameState = pgGameState::WAITING_PLAYER_JOIN;	
 	std::vector<std::vector<int>> blockMap;
 	
 	std::shared_mutex listMutex;
 	std::shared_mutex mapMutex;
+	std::shared_mutex watcherMutex;
 	int cntBlock[3];
 	int curCommand = COMMAND_NOTHING;
 	int curTurnIdx = 0;
@@ -44,7 +49,9 @@ private:
 	
 public:
 	bool JoinPlayer(pgGameUser* user);
+	bool JoinWatcher(pgGameUser* user);
 	void DisconnectPlayer(int id);
+	void DisconnectWatcher(pgGameUser* user);
 	void chkStartCondition();
 	std::vector<std::vector<int>>& getBlockMap();
 	void getUsers(int* arr);

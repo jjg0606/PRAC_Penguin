@@ -1,5 +1,6 @@
 #include "pgGameUser.h"
 #include "pgGameMgr.h"
+#include "pgGameRoom.h"
 #include <iostream>
 
 pgGameUser::pgGameUser(SOCKET& sock,bool& isStart)
@@ -7,7 +8,6 @@ pgGameUser::pgGameUser(SOCKET& sock,bool& isStart)
 {
 	this->ID = pgGameMgr::instance.getID();
 	int getRand = rand();
-	//this->avatarNum = (getRand%4);
 	buf = new char[BUFSIZE + 1];
 	memset(buf, 0, sizeof(char)*(BUFSIZE + 1));
 }
@@ -50,6 +50,7 @@ void pgGameUser::ReceivePacket(int size)
 		avatarNum = loginpac.avatar;
 		name = loginpac.name;
 		state = pgUserState::INIT;
+		pgGameMgr::instance.GetInLobby(this);
 	}
 	break;
 	
@@ -58,31 +59,57 @@ void pgGameUser::ReceivePacket(int size)
 		isReady = false;
 		PACKET_LOBBY_IN lobpac;
 		memcpy(&lobpac, buf, pHeader.size);
-		pgGameMgr::instance.userOutRoom(gameRoomNum, ID);
+		if (curRoom != nullptr)
+		{			
+			if (state == pgUserState::WATCHING)
+			{
+				curRoom->DisconnectWatcher(this);
+			}
+			else
+			{
+				curRoom->DisconnectPlayer(ID);
+			}			
+			pgGameMgr::instance.GetInLobby(this);
+		}
+		//pgGameMgr::instance.userOutRoom(gameRoomNum, ID);
 		state = pgUserState::IN_LOBBY;
 		Sleep(10);
-		if (pgGameMgr::instance.getInRoom(lobpac.index, this))
+		this->curRoom = pgGameMgr::instance.getInRoom(lobpac.index, this);
+		if (this->curRoom != nullptr)
 		{
-			gameRoomNum = lobpac.index;
 			state = pgUserState::READY_FOR_GAME;
+			pgGameMgr::instance.GetOutLobby(this);
+			break;
+		}
+
+		this->curRoom = pgGameMgr::instance.getInRoomAsWatcher(lobpac.index, this);
+		if (this->curRoom != nullptr)
+		{
+			state = pgUserState::WATCHING;
+			pgGameMgr::instance.GetOutLobby(this);
 		}
 		else
-		{
+		{			
 			SendLobbyInfo();
-			lastSend = std::chrono::system_clock::now();
 		}
 	}
 	break;
 
 	case PACKET_TYPE_GAME_READY:
-		RdyStateChange();
+		if (curRoom != nullptr)
+		{
+			RdyStateChange();
+		}
 	break;
 
 	case PACKET_TYPE_BREAK_BLOCK:
 	{
 		PACKET_BREAK_BLOCK bbpac;
 		memcpy(&bbpac, buf, pHeader.size);
-		pgGameMgr::instance.breakBlock(gameRoomNum, ID, bbpac.idx[0] / COLS, bbpac.idx[0] % COLS);
+		if (curRoom != nullptr)
+		{
+			curRoom->getPlayerInput(ID, bbpac.idx[0] / COLS, bbpac.idx[0] % COLS);
+		}
 	}
 	break;
 
@@ -90,10 +117,19 @@ void pgGameUser::ReceivePacket(int size)
 	{
 		PACKET_CHAT_MSG chatpac;
 		memcpy(&chatpac, buf, pHeader.size);
-		pgGameMgr::instance.BroadCastChat(gameRoomNum, ID, chatpac.chatLength, chatpac.msg);
+		curRoom->broadCastChat(ID, chatpac.chatLength, chatpac.msg);
 		//TODO
 	}
 	break;
+
+	case PACKET_TYPE_LOBBY_CHAT:
+	{
+		PACKET_LOBBY_CHAT locpac;
+		memcpy(&locpac, buf, pHeader.size);
+		pgGameMgr::instance.BroadCastToLobby(name, locpac.chatLength, locpac.msg);
+	}
+	break;
+
 
 	default:
 		cutBuf(bufIdx);
@@ -175,7 +211,21 @@ void pgGameUser::Release()
 {
 	isStart = false;
 	delete buf;
-	pgGameMgr::instance.userOutRoom(gameRoomNum, ID);
+	if (curRoom != nullptr)
+	{
+		if (state == pgUserState::WATCHING)
+		{
+			curRoom->DisconnectWatcher(this);
+		}
+		else
+		{
+			curRoom->DisconnectPlayer(ID);
+		}		
+	}
+	else if(state == pgUserState::IN_LOBBY || state == pgUserState::INIT)
+	{
+		pgGameMgr::instance.GetOutLobby(this);
+	}
 }
 
 void pgGameUser::SendReadySignal()
@@ -205,10 +255,16 @@ void pgGameUser::SendLobbyInfo()
 	SendToUser(&lobbypac, sizeof(lobbypac));
 }
 
+void pgGameUser::SendWatchingEnd()
+{
+	SendLobbyInfo();
+	state = pgUserState::IN_LOBBY;
+}
 
 void pgGameUser::SendLobbyPlayers(int playerNum, pgGameUser* list[4])
 {
 	PACKET_LOBBY_PLAYERS lppac;
+	memset(&lppac, 0, sizeof(lppac));
 	lppac.header.type = PACKET_TYPE_LOBBY_PLAYERS;
 	lppac.header.size = sizeof(lppac);
 	lppac.playerNum = playerNum;
@@ -216,10 +272,17 @@ void pgGameUser::SendLobbyPlayers(int playerNum, pgGameUser* list[4])
 	{
 		lppac.avatar[i] = list[i]->avatarNum;
 		lppac.isReady[i] = list[i]->isReady;
+		
+		for (int n = 0; n < list[i]->name.length(); n++)
+		{
+			lppac.nameArr[i][n] = list[i]->name[n];
+		}
+
 		if (list[i]->ID == this->ID)
 		{
 			lppac.myNum = i;
 		}
+
 	}
 	SendToUser(&lppac, sizeof(lppac));
 }
@@ -227,7 +290,7 @@ void pgGameUser::SendLobbyPlayers(int playerNum, pgGameUser* list[4])
 void pgGameUser::RdyStateChange()
 {
 	this->isReady = !isReady;
-	pgGameMgr::instance.RdyStateChanged(gameRoomNum);
+	curRoom->chkStartCondition();
 }
 
 void pgGameUser::SendBlockMap(std::vector<std::vector<int>>& map,int turnIdx,int command)
@@ -246,6 +309,33 @@ void pgGameUser::SendBlockMap(std::vector<std::vector<int>>& map,int turnIdx,int
 	}
 	state = pgUserState::IN_GAME;
 	SendToUser(&blockpac, sizeof(blockpac));
+}
+
+void pgGameUser::SendWatchInfo(std::vector<std::vector<int>>& map, int turnIdx, int command, int playerNum, pgGameUser* list[4])
+{
+	PACKET_WATCHING_BLOCK wacpac;
+	memset(&wacpac, 0, sizeof(wacpac));
+	wacpac.header.type = PACKET_TYPE_WATCHING_BLOCK;
+	wacpac.header.size = sizeof(wacpac);
+	wacpac.turnIdx = turnIdx;
+	wacpac.command = command;
+	for (int r = 0; r < ROWS; r++)
+	{
+		for (int c = 0; c < COLS; c++)
+		{
+			wacpac.blockState[r*COLS + c] = map[r][c];
+		}
+	}
+	wacpac.playerNum = playerNum;
+	for (int i = 0; i < playerNum; i++)
+	{
+		wacpac.avatar[i] = list[i]->avatarNum;
+		for (int n = 0; n < list[i]->name.length(); n++)
+		{
+			wacpac.nameArr[i][n] = list[i]->name[n];
+		}
+	}
+	SendToUser(&wacpac, sizeof(wacpac));	
 }
 
 void pgGameUser::SendBreakInfo(int breakNum, int* breakArr)
@@ -291,4 +381,23 @@ void pgGameUser::SendChatMsgTo(int idx, int length, wchar_t* buf)
 	}
 
 	SendToUser(&chatpac, chatpac.header.size);
+}
+
+void pgGameUser::SendLobbyChatMsgTo(const std::wstring& id, int msgLength, wchar_t* buf)
+{
+	PACKET_LOBBY_CHAT locpac;
+	memset(&locpac, 0, sizeof(locpac));
+
+	locpac.header.type = PACKET_TYPE_LOBBY_CHAT;
+	for (int i = 0; i < id.length(); i++)
+	{
+		locpac.playerName[i] = id[i];
+	}
+	locpac.chatLength = msgLength;
+	for (int i = 0; i < msgLength; i++)
+	{
+		locpac.msg[i] = buf[i];
+	}
+	locpac.header.size = sizeof(locpac.header) + sizeof(locpac.playerName) + sizeof(locpac.chatLength) + sizeof(wchar_t) * locpac.chatLength;
+	SendToUser(&locpac, locpac.header.size);
 }

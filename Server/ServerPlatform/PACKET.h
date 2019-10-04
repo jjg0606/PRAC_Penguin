@@ -3,6 +3,7 @@
 #define ROWS 5
 #define COLS 5
 #define MAX_LOBBY 10
+#define MAX_PLAYERS_IN_ROOM 4
 #define MAX_CHAT_LENGTH 50
 #define MAX_NAME_LENGTH 12
 
@@ -13,11 +14,13 @@ enum PACKET_TYPE
 	PACKET_TYPE_BLOCK_SETTING,
 	PACKET_TYPE_LOBBY_INFO,
 	PACKET_TYPE_LOBBY_IN,
+	PACKET_TYPE_LOBBY_CHAT,
 	PACKET_TYPE_LOBBY_PLAYERS,
 	PACKET_TYPE_GAME_READY,
 	PACKET_TYPE_TURN_MSG,
 	PACKET_TYPE_BREAK_BLOCK,
 	PACKET_TYPE_CHAT_MSG,
+	PACKET_TYPE_WATCHING_BLOCK,
 };
 
 enum SYSTEM_MSG
@@ -70,6 +73,18 @@ PACKET_BLOCK_SETTING;
 typedef struct
 {
 	PACKET_HEADER header;
+	int blockState[ROWS*COLS];
+	int turnIdx;
+	int command;
+	int playerNum;
+	int avatar[MAX_PLAYERS_IN_ROOM];
+	wchar_t nameArr[MAX_PLAYERS_IN_ROOM][MAX_NAME_LENGTH];
+}
+PACKET_WATCHING_BLOCK;
+
+typedef struct
+{
+	PACKET_HEADER header;
 	int roomNum;
 	bool isPlaying[MAX_LOBBY];
 	int playerNum[MAX_LOBBY];
@@ -88,8 +103,9 @@ typedef struct
 	PACKET_HEADER header;
 	int playerNum;
 	int myNum;
-	int avatar[4];
-	bool isReady[4];
+	int avatar[MAX_PLAYERS_IN_ROOM];
+	bool isReady[MAX_PLAYERS_IN_ROOM];
+	wchar_t nameArr[MAX_PLAYERS_IN_ROOM][MAX_NAME_LENGTH];
 }
 PACKET_LOBBY_PLAYERS;
 
@@ -117,5 +133,14 @@ typedef struct
 	wchar_t msg[MAX_CHAT_LENGTH];
 }
 PACKET_CHAT_MSG;
+
+typedef struct
+{
+	PACKET_HEADER header;
+	wchar_t playerName[MAX_NAME_LENGTH];
+	int chatLength;
+	wchar_t msg[MAX_CHAT_LENGTH];
+}
+PACKET_LOBBY_CHAT;
 
 #pragma pack()
